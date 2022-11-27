@@ -194,8 +194,7 @@ abstract class Element extends Node with ElementBase, ElementEventMixin, Element
     _updateRenderBoxModel();
   }
 
-  Element(BindingContext? context)
-      : super(NodeType.ELEMENT_NODE, context) {
+  Element(BindingContext? context) : super(NodeType.ELEMENT_NODE, context) {
     // Init style and add change listener.
     style = CSSStyleDeclaration.computedStyle(this, defaultStyle, _onStyleChanged, _onStyleFlushed);
 
@@ -252,15 +251,19 @@ abstract class Element extends Node with ElementBase, ElementEventMixin, Element
     }, deleter: () {
       _removeInlineStyle();
     });
-    attributes[_CLASS_NAME] = ElementAttributeProperty(setter: (value) => className = value, deleter: () {
-      className = EMPTY_STRING;
-    });
-    attributes[_ID] = ElementAttributeProperty(setter: (value) => id = value, deleter: () {
-      id = EMPTY_STRING;
-    });
+    attributes[_CLASS_NAME] = ElementAttributeProperty(
+        setter: (value) => className = value,
+        deleter: () {
+          className = EMPTY_STRING;
+        });
+    attributes[_ID] = ElementAttributeProperty(
+        setter: (value) => id = value,
+        deleter: () {
+          id = EMPTY_STRING;
+        });
     attributes[_NAME] = ElementAttributeProperty(setter: (value) {
       _updateNameMap(value, oldName: getAttribute(_NAME));
-    } , deleter: () {
+    }, deleter: () {
       _updateNameMap(null, oldName: getAttribute(_NAME));
     });
   }
@@ -1851,6 +1854,15 @@ abstract class Element extends Node with ElementBase, ElementEventMixin, Element
       }
     }
     return false;
+  }
+
+  RenderStyle? computedStyle(String? pseudoElementSpecifier) {
+    RenderStyle? usedStyle = renderBoxModel?.renderStyle;
+    if (usedStyle == null) {
+      recalculateStyle();
+      usedStyle = renderBoxModel?.renderStyle;
+    }
+    return usedStyle;
   }
 }
 
