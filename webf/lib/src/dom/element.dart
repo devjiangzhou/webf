@@ -1270,7 +1270,12 @@ abstract class Element extends ContainerNode with ElementBase, ElementEventMixin
     if (qualifiedName == 'class') {
       className = value;
       return;
+    } else if (qualifiedName == 'hidden') {
+      inlineStyle[DISPLAY] = 'none';
+      setRenderStyleProperty(DISPLAY, CSSDisplay.none);
+      return;
     }
+
     final isNeedRecalculate = _checkRecalculateStyle([qualifiedName], ownerDocument.ruleSet.attributeRules);
     recalculateStyle(rebuildNested: isNeedRecalculate);
   }
