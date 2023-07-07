@@ -41,6 +41,9 @@ class CSSFontFace {
   static void resolveFontFaceRules(CSSFontFaceRule fontFaceRule, int contextId) async {
     CSSStyleDeclaration declaration = fontFaceRule.declarations;
     String fontFamily = declaration.getPropertyValue('fontFamily');
+    if (fontFamily.startsWith("'") || fontFamily.endsWith("'")) {
+      fontFamily = fontFamily.replaceAll("'", '');
+    }
     String url = declaration.getPropertyValue('src');
     if (fontFamily.isNotEmpty && url.isNotEmpty && CSSFunction.isFunction(url)) {
       String? tmp_src;
