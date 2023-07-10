@@ -61,8 +61,22 @@ class RenderSVGRoot extends RenderSVGContainer {
 
   @override
   void performLayout() {
-    var width = renderStyle.width.isAuto ? DEFAULT_VIEW_BOX_WIDTH : renderStyle.width.computedValue;
-    var height = renderStyle.height.isAuto ? DEFAULT_VIEW_BOX_HEIGHT : renderStyle.height.computedValue;
+
+    var width = DEFAULT_VIEW_BOX_WIDTH;
+    if (!renderStyle.width.isAuto) {
+      width = renderStyle.width.computedValue;
+    } else if (renderStyle.parent?.width.isAuto != true) {
+        width = renderStyle.parent?.width.computedValue ?? DEFAULT_VIEW_BOX_WIDTH;
+    }
+
+    var height = DEFAULT_VIEW_BOX_HEIGHT;
+    if (!renderStyle.height.isAuto) {
+      height = renderStyle.height.computedValue;
+    } else if (renderStyle.parent?.height.isAuto != true) {
+      height = renderStyle.parent?.height.computedValue ?? DEFAULT_VIEW_BOX_HEIGHT;
+    } else {
+      height = width;
+    }
 
     width = width.isInfinite ? DEFAULT_VIEW_BOX_WIDTH : width;
     height = height.isInfinite ? DEFAULT_VIEW_BOX_HEIGHT : height;
