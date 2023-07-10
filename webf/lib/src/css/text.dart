@@ -6,6 +6,7 @@
 import 'package:flutter/rendering.dart';
 import 'package:webf/css.dart';
 import 'package:webf/rendering.dart';
+import 'package:webf/src/rendering/text_span.dart';
 
 final RegExp _commaRegExp = RegExp(r'\s*,\s*');
 
@@ -476,7 +477,8 @@ mixin CSSTextMixin on RenderStyle {
     CSSRenderStyle renderStyle, {
     Color? color,
     double? height,
-  }) {
+    TextSpan? oldTextSpan,
+}) {
     // Creates a new TextStyle object.
     //   color: The color to use when painting the text. If this is specified, foreground must be null.
     //   decoration: The decorations to paint near the text (e.g., an underline).
@@ -510,10 +512,7 @@ mixin CSSTextMixin on RenderStyle {
         background: CSSText.getBackground(),
         foreground: null,
         height: height);
-    return TextSpan(
-      text: text,
-      style: textStyle,
-    );
+    return WebfTextSpan(text: CSSText.toCharacterBreakStr(text), style: textStyle, children: []);
   }
 }
 
@@ -727,6 +726,18 @@ class CSSText {
       default:
         return FontStyle.normal;
     }
+  }
+
+  static String? toCharacterBreakStr(String? word) {
+    if (word == null || word.isEmpty) {
+      return null;
+    }
+    String breakWord = '';
+    word.runes.forEach((element) {
+      breakWord += String.fromCharCode(element);
+      breakWord += '\u200B';
+    });
+    return breakWord;
   }
 
   static TextBaseline getTextBaseLine() {

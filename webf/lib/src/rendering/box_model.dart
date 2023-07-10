@@ -869,6 +869,10 @@ class RenderBoxModel extends RenderBox
     }
   }
 
+  LogicInlineBox createLogicInlineBox() {
+    return LogicInlineBox(renderObject: this);
+  }
+
   @override
   void layout(Constraints newConstraints, {bool parentUsesSize = false}) {
     renderBoxInLayoutHashCodes.add(hashCode);
@@ -1035,6 +1039,11 @@ class RenderBoxModel extends RenderBox
     Size paddingBoxSize = renderStyle.wrapPaddingSize(_contentSize!);
     Size borderBoxSize = renderStyle.wrapBorderSize(paddingBoxSize);
     return constraints.constrain(borderBoxSize);
+  }
+
+  Size wrapOutContentSizeRight (Size contentSize) {
+    Size paddingBoxSize = renderStyle.wrapPaddingSizeRight(contentSize);
+    return renderStyle.wrapBorderSizeRight(paddingBoxSize);
   }
 
   // The contentSize of layout box

@@ -2,12 +2,13 @@
  * Copyright (C) 2019-2022 The Kraken authors. All rights reserved.
  * Copyright (C) 2022-present The WebF authors. All rights reserved.
  */
+import 'dart:ui';
 
 import 'package:flutter/rendering.dart';
 import 'package:webf/css.dart';
 import 'package:webf/dom.dart';
 import 'package:webf/rendering.dart';
-
+import 'dart:ui' as ui show PlaceholderAlignment;
 // White space processing in CSS affects only the document white space characters:
 // spaces (U+0020), tabs (U+0009), and segment breaks.
 // Carriage returns (U+000D) are treated identically to spaces (U+0020) in all respects.
@@ -16,6 +17,7 @@ final String _documentWhiteSpace = '\u0020\u0009\u000A\u000D';
 final RegExp _collapseWhiteSpaceReg = RegExp(r'[' + _documentWhiteSpace + r']+');
 final RegExp _trimLeftWhitespaceReg = RegExp(r'^[' + _documentWhiteSpace + r']([^' + _documentWhiteSpace + r']+)');
 final RegExp _trimRightWhitespaceReg = RegExp(r'([^' + _documentWhiteSpace + r']+)[' + _documentWhiteSpace + r']$');
+final webfTextMaxLines = double.maxFinite.toInt();
 
 class TextParentData extends ContainerBoxParentData<RenderBox> {}
 
@@ -33,8 +35,11 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
       foregroundCallback: _getForeground,
     );
   }
+  RenderTextLineBoxes textInLineBoxes = RenderTextLineBoxes();
 
   String _data;
+  double _lastFirstLineIndent = 0;
+
 
   set data(String value) {
     _data = value;
@@ -117,11 +122,27 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
   BoxSizeType? widthSizeType;
   BoxSizeType? heightSizeType;
 
+  // Auto value for min-width
+  double autoMinWidth = 0;
+
+  // Auto value for min-height
+  double autoMinHeight = 0;
+
+
   // Nominally, the smallest size a box could take that doesn’t lead to overflow that could be avoided by choosing
   // a larger size. Formally, the size of the box when sized under a min-content constraint.
   // https://www.w3.org/TR/css-sizing-3/#min-content
   double minContentWidth = 0;
   double minContentHeight = 0;
+
+  double get firstLineIndent {
+    if (constraints is InlineBoxConstraints) {
+      return (constraints as InlineBoxConstraints).leftWidth;
+    }
+    return 0;
+  }
+
+  LogicTextInlineBox get firstTextInlineBox => textInLineBoxes.firstChild;
 
   // Box size equals to RenderBox.size to avoid flutter complain when read size property.
   Size? _boxSize;
@@ -165,10 +186,31 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
     return null;
   }
 
+  TextSpan buildTextSpan({TextSpan? oldText}) {
+    String clippedText = _getClippedText(_trimmedData);
+    WebfTextSpan textSpan =
+    CSSTextMixin.createTextSpan(clippedText, renderStyle, oldTextSpan: oldText) as WebfTextSpan;
+    return textSpan;
+  }
+
+  int get lines => _renderParagraph.lineMetrics.length;
+
+  // RenderTextBox content's first line will join a LogicLineBox which have some InlineBoxes as children,
+  bool happenLineJoin() {
+    if (firstLineIndent > 0 &&
+        (textInLineBoxes.firstChild.logicRect.left >= firstLineIndent ||
+            lines == 1 && textInLineBoxes.firstChild.width < constraints.maxWidth - firstLineIndent)) {
+      return true;
+    }
+    return false;
+  }
+
   TextSpan get textSpan {
     String clippedText = _getClippedText(_trimmedData);
     // FIXME(yuanyan): do not create text span every time.
-    return CSSTextMixin.createTextSpan(clippedText, renderStyle);
+    //
+    WebfTextSpan textSpan = CSSTextMixin.createTextSpan(clippedText, renderStyle) as WebfTextSpan;
+    return textSpan;
   }
 
   Paint? _getForeground(Rect bounds) {
@@ -177,6 +219,16 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
       return Paint()..shader = backgroundImage?.gradient?.createShader(bounds);
     }
     return null;
+  }
+
+  List<double>? getLineAscent(int lineNum){
+    LineMetrics lineMetrics = _renderParagraph.getLineMetricsByLineNum(lineNum);
+    double lineHeight = _lineHeight ?? 0;
+    double leading = 0;
+    if(lineHeight>0) {
+      leading = lineHeight - lineMetrics.height;
+    }
+    return [lineMetrics.ascent + leading/2, lineMetrics.descent + leading/2];
   }
 
   // Mirror debugNeedsLayout flag in Flutter to use in layout performance optimization
@@ -197,9 +249,9 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
     needsLayout = true;
   }
 
-  BoxConstraints getConstraints() {
+  BoxConstraints getConstraints(int maxLinesFromParent) {
     if (renderStyle.whiteSpace == WhiteSpace.nowrap && renderStyle.effectiveTextOverflow != TextOverflow.ellipsis) {
-      return BoxConstraints();
+      return InlineBoxConstraints(maxLines: maxLinesFromParent);
     }
 
     double maxConstraintWidth = double.infinity;
@@ -237,7 +289,11 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
 
     // Text will not overflow from container, so it can inherit
     // constraints from parents
-    return BoxConstraints(minWidth: 0, maxWidth: maxConstraintWidth, minHeight: 0, maxHeight: double.infinity);
+    // Text will not overflow from container, so it can inherit
+    // constraints from parents
+    return InlineBoxConstraints(maxLines: maxLinesFromParent,
+        minWidth: 0, maxWidth: maxConstraintWidth,
+        minHeight: 0, maxHeight: double.infinity);
   }
 
   // Empty string is the minimum size character, use it as the base size
@@ -323,16 +379,48 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
     return string.replaceAllMapped(_trimRightWhitespaceReg, (Match m) => '${m[1]}');
   }
 
+  void _updatePlaceHolderDimensions(WebFRenderParagraph paragraph) {
+    if (firstLineIndent > 0) {
+      double defaultHeight = 1;
+
+      paragraph.setPlaceholderDimensions([
+        PlaceholderDimensions(size: Size(firstLineIndent, defaultHeight), alignment: ui.PlaceholderAlignment.bottom)
+      ]);
+    }
+  }
+
+
   @override
   void performLayout() {
     WebFRenderParagraph? paragraph = child as WebFRenderParagraph?;
+    textInLineBoxes.clear();
     if (paragraph != null) {
       paragraph.overflow = renderStyle.effectiveTextOverflow;
-      paragraph.textAlign = renderStyle.textAlign;
-      paragraph.text = textSpan;
+      // paragraph.textAlign = renderStyle.textAlign;
+
+      // first set text is no use, so need check again
+      paragraph.text = buildTextSpan(oldText: paragraph.text);
+
+      WebfTextSpan text = (paragraph.text as WebfTextSpan);
+      if (firstLineIndent > 0 && firstLineIndent != _lastFirstLineIndent) {
+        if (text.children!.isEmpty) {
+          WebfTextPlaceHolderSpan placeHolderSpan = WebfTextPlaceHolderSpan();
+          text.children!.add(placeHolderSpan);
+          text.textSpanPosition.putIfAbsent(placeHolderSpan, () => true);
+        }
+        _updatePlaceHolderDimensions(paragraph);
+      } else if (firstLineIndent == 0 && (firstLineIndent != _lastFirstLineIndent || text.children!.isNotEmpty)) {
+        text.children!.clear();
+        text.textSpanPosition.clear();
+        paragraph.markUpdateTextPainter();
+      }
+      _lastFirstLineIndent = firstLineIndent;
       paragraph.maxLines = _maxLines;
       paragraph.lineHeight = _lineHeight;
       paragraph.layout(constraints, parentUsesSize: true);
+      paragraph.lineRenderList.forEach((element) {
+        textInLineBoxes.createAndAppendTextBox(this, element.lineRect);
+      });
 
       size = paragraph.size;
 
@@ -340,8 +428,8 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
       // which cannot be calculated in Flutter currently.
       // Set minimum width to 0 to allow flex item containing text to shrink into
       // flex container which is similar to the effect of word-break: break-all in the browser.
-      minContentWidth = 0;
-      minContentHeight = size.height;
+      autoMinWidth = 0;
+      autoMinHeight = size.height;
     } else {
       performResize();
     }
@@ -378,4 +466,110 @@ class RenderTextBox extends RenderBox with RenderObjectWithChildMixin<RenderBox>
   bool hitTest(BoxHitTestResult result, {Offset? position}) {
     return hasSize && size.contains(position!);
   }
+  void updateRenderTextLineOffset(int index, Offset offset) {
+    if (_renderParagraph.lineRenderList.length > index) {
+      _renderParagraph.lineRenderList[index].paintOffset = offset;
+    }
+  }
+}
+
+class RenderTextLineBoxes {
+  List<LogicTextInlineBox> inlineBoxList = [];
+
+  LogicTextInlineBox get firstChild => inlineBoxList.first;
+
+  LogicTextInlineBox get lastChild => inlineBoxList.last;
+
+  LogicTextInlineBox createAndAppendTextBox(RenderTextBox renderObject, Rect rect) {
+    inlineBoxList.add(LogicTextInlineBox(logicRect: rect, renderObject: renderObject));
+    return inlineBoxList.last;
+  }
+
+  get length {
+    return inlineBoxList.length;
+  }
+
+  void clear() {
+    inlineBoxList.clear();
+  }
+
+  LogicTextInlineBox get(int index) {
+    return inlineBoxList[index];
+  }
+
+  int findIndex(LogicTextInlineBox box) {
+    return inlineBoxList.indexOf(box);
+  }
+
+  void updateTextPaintOffset(Offset offset, LogicTextInlineBox box) {
+    RenderTextBox renderTextBox = box.renderObject as RenderTextBox;
+    int index = findIndex(box);
+    renderTextBox.updateRenderTextLineOffset(index, offset);
+  }
+}
+
+class MultiLineBoxConstraints extends BoxConstraints {
+  final int? maxLines;
+  final int? joinLineNum;
+  final bool? overflow;
+  MultiLineBoxConstraints.from(int? maxLines, int? joinLine, bool? overflow, BoxConstraints constraints
+      ) : maxLines = maxLines ?? webfTextMaxLines,
+        joinLineNum = joinLine ?? 0,
+        overflow = overflow ?? false,
+        super(minWidth: constraints.minWidth,
+          maxWidth: constraints.maxWidth,
+          minHeight: constraints.minHeight,
+          maxHeight: constraints.maxHeight);
+
+  MultiLineBoxConstraints({
+    int? maxLines,
+    int? joinLine,
+    bool? overflow,
+    double minWidth = 0.0,
+    double maxWidth = double.infinity,
+    double minHeight = 0.0,
+    double maxHeight = double.infinity,
+  }) : maxLines = maxLines ?? webfTextMaxLines, joinLineNum = joinLine ?? 0,
+        overflow = overflow ?? false,
+        super(minWidth: minWidth, maxWidth: maxWidth, minHeight: minHeight, maxHeight: maxHeight);
+
+}
+
+class InlineBoxConstraints extends MultiLineBoxConstraints {
+  final double leftWidth;
+  final double lineMainExtent;
+
+  InlineBoxConstraints({
+    this.leftWidth = 0.0,
+    this.lineMainExtent = 0.0,
+    int? maxLines,
+    int? joinLine,
+    bool? overflow,
+    double minWidth = 0.0,
+    double maxWidth = double.infinity,
+    double minHeight = 0.0,
+    double maxHeight = double.infinity,
+  }) : super(maxLines: maxLines, overflow: overflow,joinLine: joinLine,minWidth: minWidth, maxWidth: maxWidth, minHeight: minHeight, maxHeight: maxHeight);
+
+  bool get isDynamicMaxLines {
+    return leftWidth > 0 && joinLineNum != null && joinLineNum! > 0;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    assert(debugAssertIsValid());
+    if (identical(this, other)) return true;
+    if (other.runtimeType != runtimeType) return false;
+    assert(other is InlineBoxConstraints && other.debugAssertIsValid());
+    return other is InlineBoxConstraints &&
+        other.minWidth == minWidth &&
+        other.maxWidth == maxWidth &&
+        other.minHeight == minHeight &&
+        other.maxHeight == maxHeight &&
+        other.leftWidth == leftWidth;
+  }
+
+  @override
+  // TODO: implement hashCode
+  int get hashCode => hashValues(leftWidth, lineMainExtent, minWidth, maxWidth, minHeight, maxHeight);
 }

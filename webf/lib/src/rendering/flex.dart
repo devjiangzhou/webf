@@ -761,7 +761,7 @@ class RenderFlexLayout extends RenderLayoutBox {
       } else if (child is RenderBoxModel) {
         childConstraints = child.getConstraints();
       } else if (child is RenderTextBox) {
-        childConstraints = child.getConstraints();
+        childConstraints = child.getConstraints(webfTextMaxLines);
       } else {
         childConstraints = BoxConstraints();
       }
@@ -2338,6 +2338,12 @@ class RenderFlexLayout extends RenderLayoutBox {
     properties.add(DiagnosticsProperty<JustifyContent>('justifyContent', renderStyle.justifyContent));
     properties.add(DiagnosticsProperty<AlignItems>('alignItems', renderStyle.alignItems));
     properties.add(DiagnosticsProperty<FlexWrap>('flexWrap', renderStyle.flexWrap));
+  }
+
+
+  @override
+  LogicInlineBox createLogicInlineBox() {
+    return LogicInlineBox(renderObject: this);
   }
 
   static bool _isPlaceholderPositioned(RenderObject child) {
