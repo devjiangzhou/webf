@@ -8,6 +8,7 @@
 #include "bindings/qjs/exception_state.h"
 #include "bindings/qjs/script_promise_resolver.h"
 #include "core/dom/events/event_target.h"
+#include "core/dom/mutation_observer_interest_group.h"
 #include "core/executing_context.h"
 #include "foundation/native_string.h"
 #include "foundation/native_value_converter.h"
@@ -79,7 +80,8 @@ NativeValue BindingObject::InvokeBindingMethod(const AtomicString& method,
   NativeValue return_value = Native_NewNull();
   NativeValue native_method =
       NativeValueConverter<NativeTypeString>::ToNativeValue(GetExecutingContext()->ctx(), method);
-  binding_object_->invoke_bindings_methods_from_native(binding_object_, &return_value, &native_method, argc, argv);
+  binding_object_->invoke_bindings_methods_from_native(GetExecutingContext()->contextId(), binding_object_,
+                                                       &return_value, &native_method, argc, argv);
   return return_value;
 }
 
@@ -96,7 +98,8 @@ NativeValue BindingObject::InvokeBindingMethod(BindingMethodCallOperations bindi
 
   NativeValue return_value = Native_NewNull();
   NativeValue native_method = NativeValueConverter<NativeTypeInt64>::ToNativeValue(binding_method_call_operation);
-  binding_object_->invoke_bindings_methods_from_native(binding_object_, &return_value, &native_method, argc, argv);
+  binding_object_->invoke_bindings_methods_from_native(GetExecutingContext()->contextId(), binding_object_,
+                                                       &return_value, &native_method, argc, argv);
   return return_value;
 }
 
@@ -121,6 +124,17 @@ NativeValue BindingObject::SetBindingProperty(const AtomicString& prop,
         "Can not set binding property on BindingObject, dart binding object had been disposed");
     return Native_NewNull();
   }
+
+  if (auto element = const_cast<WidgetElement*>(DynamicTo<WidgetElement>(this))) {
+    if (std::shared_ptr<MutationObserverInterestGroup> recipients =
+            MutationObserverInterestGroup::CreateForAttributesMutation(*element, prop)) {
+      NativeValue old_native_value = GetBindingProperty(prop, exception_state);
+      ScriptValue old_value = ScriptValue(ctx(), old_native_value);
+      recipients->EnqueueMutationRecord(
+          MutationRecord::CreateAttributes(element, prop, AtomicString::Null(), old_value.ToString(ctx())));
+    }
+  }
+
   GetExecutingContext()->FlushUICommand();
   const NativeValue argv[] = {Native_NewString(prop.ToNativeString(GetExecutingContext()->ctx()).release()), value};
   return InvokeBindingMethod(BindingMethodCallOperations::kSetProperty, 2, argv, exception_state);
@@ -141,7 +155,7 @@ ScriptValue BindingObject::AnonymousFunctionCallback(JSContext* ctx,
   ExceptionState exception_state;
 
   for (int i = 0; i < argc; i++) {
-    arguments.emplace_back(argv[i].ToNative(exception_state));
+    arguments.emplace_back(argv[i].ToNative(ctx, exception_state));
   }
 
   if (exception_state.HasException()) {
@@ -215,7 +229,7 @@ ScriptValue BindingObject::AnonymousAsyncFunctionCallback(JSContext* ctx,
   ExceptionState exception_state;
 
   for (int i = 0; i < argc; i++) {
-    arguments.emplace_back(argv[i].ToNative(exception_state));
+    arguments.emplace_back(argv[i].ToNative(ctx, exception_state));
   }
 
   event_target->InvokeBindingMethod(BindingMethodCallOperations::kAsyncAnonymousFunction, argc + 4, arguments.data(),

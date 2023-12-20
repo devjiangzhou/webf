@@ -95,7 +95,7 @@ class CSSStyleDeclaration extends BindingObject {
     _pseudoAfterStyle = newStyle;
   }
 
-  CSSStyleDeclaration([BindingContext? context]);
+  CSSStyleDeclaration([BindingContext? context]): super(context);
 
   // ignore: prefer_initializing_formals
   CSSStyleDeclaration.computedStyle(this.target, this.defaultStyle, this.onStyleChanged, [this.onStyleFlushed]);

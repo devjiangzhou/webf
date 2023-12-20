@@ -4,6 +4,7 @@
  */
 
 #include "performance.h"
+#include <algorithm>
 #include <chrono>
 #include "bindings/qjs/converter_impl.h"
 #include "bindings/qjs/script_value.h"
@@ -107,8 +108,6 @@ void Performance::clearMarks(ExceptionState& exception_state) {
   while (it != entries_.end()) {
     if ((*it)->entryType() != performance_entry_names::kmark) {
       new_entries.emplace_back(*it);
-    } else {
-      it->Clear();
     }
     it++;
   }
@@ -123,8 +122,6 @@ void Performance::clearMarks(const AtomicString& name, ExceptionState& exception
   while (it != std::end(entries_)) {
     if (!((*it)->entryType() == performance_entry_names::kmark && (*it)->name() == name)) {
       new_entries.emplace_back(*it);
-    } else {
-      it->Clear();
     }
     it++;
   }
@@ -139,8 +136,6 @@ void Performance::clearMeasures(ExceptionState& exception_state) {
   while (it != std::end(entries_)) {
     if ((*it)->entryType() != performance_entry_names::kmeasure) {
       new_entries.emplace_back(*it);
-    } else {
-      it->Clear();
     }
     it++;
   }
@@ -155,8 +150,6 @@ void Performance::clearMeasures(const AtomicString& name, ExceptionState& except
   while (it != std::end(entries_)) {
     if (!((*it)->entryType() == performance_entry_names::kmeasure && (*it)->name() == name)) {
       new_entries.emplace_back(*it);
-    } else {
-      it->Clear();
     }
     it++;
   }
@@ -184,7 +177,7 @@ void Performance::measure(const AtomicString& measure_name,
                           const ScriptValue& start_mark_or_options,
                           ExceptionState& exception_state) {
   if (start_mark_or_options.IsString()) {
-    measure(measure_name, start_mark_or_options.ToString(), exception_state);
+    measure(measure_name, start_mark_or_options.ToString(ctx()), exception_state);
   } else {
     auto&& options =
         Converter<PerformanceMeasureOptions>::FromValue(ctx(), start_mark_or_options.QJSValue(), exception_state);
@@ -198,7 +191,7 @@ void Performance::measure(const AtomicString& measure_name,
                           const AtomicString& end_mark,
                           ExceptionState& exception_state) {
   if (start_mark_or_options.IsString()) {
-    measure(measure_name, start_mark_or_options.ToString(), end_mark, exception_state);
+    measure(measure_name, start_mark_or_options.ToString(ctx()), end_mark, exception_state);
   } else {
     auto&& options =
         Converter<PerformanceMeasureOptions>::FromValue(ctx(), start_mark_or_options.QJSValue(), exception_state);

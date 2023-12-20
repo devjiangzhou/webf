@@ -269,6 +269,17 @@ class RenderFlexLayout extends RenderLayoutBox {
     }
   }
 
+  bool isFlexNone(RenderBox child) {
+    // Placeholder have the safe effect to flex: none.
+    if (child is RenderPositionPlaceholder) {
+      return true;
+    }
+    double flexGrow = _getFlexGrow(child);
+    double flexShrink = _getFlexShrink(child);
+    double? flexBasis = _getFlexBasis(child);
+    return flexBasis == null && flexGrow == 0 && flexShrink == 0;
+  }
+
   double _getFlexGrow(RenderBox child) {
     // Flex shrink has no effect on placeholder of positioned element.
     if (child is RenderPositionPlaceholder) {
@@ -1168,11 +1179,20 @@ class RenderFlexLayout extends RenderLayoutBox {
       double initialFreeSpace = isMainSizeDefinite ? (maxMainSize ?? 0) - totalSpace : 0;
 
       double layoutContentMainSize = _isHorizontalFlexDirection ? contentSize.width : contentSize.height;
+      double minMainAxisSize = _getMinMainAxisSize(this);
       // Flexbox with minSize on main axis when maxMainSize < minSize && maxMainSize < RenderBox.Size, adapt freeSpace
       if (maxMainSize != null &&
-          (maxMainSize < _getMinMainAxisSize(this) || maxMainSize < layoutContentMainSize) &&
+          (maxMainSize < minMainAxisSize || maxMainSize < layoutContentMainSize) &&
           initialFreeSpace == 0) {
-        maxMainSize = math.max(layoutContentMainSize, _getMinMainAxisSize(this));
+        maxMainSize = math.max(layoutContentMainSize, minMainAxisSize);
+
+        double maxMainConstraints = _isHorizontalFlexDirection ? contentConstraints!.maxWidth : contentConstraints!.maxHeight;
+        // determining isScrollingContentBox is to reduce the scope of influence
+        if (isScrollingContentBox && maxMainConstraints.isFinite) {
+          maxMainSize = totalFlexShrink > 0 ? math.min(maxMainSize, maxMainConstraints) : maxMainSize;
+          maxMainSize = totalFlexGrow > 0 ? math.max(maxMainSize, maxMainConstraints) : maxMainSize;
+        }
+
         initialFreeSpace = maxMainSize - totalSpace;
       }
 

@@ -30,6 +30,14 @@ Pointer<NativeString> stringToNativeString(String string) {
   return nativeString;
 }
 
+Pointer<Uint8> uint8ListToPointer(Uint8List data) {
+  Pointer<Uint8> ptr = malloc.allocate<Uint8>(sizeOf<Uint8>() * data.length + 1);
+  Uint8List dataView = ptr.asTypedList(data.length + 1);
+  dataView.setAll(0, data);
+  dataView[data.length] = 0;
+  return ptr;
+}
+
 int doubleToUint64(double value) {
   var byteData = ByteData(8);
   byteData.setFloat64(0, value);
@@ -80,9 +88,8 @@ typedef NativeInvokeModule = Pointer<NativeValue> Function(
     Pointer<NativeValue> params,
     Pointer<NativeFunction<NativeAsyncModuleCallback>>);
 
-dynamic invokeModule(Pointer<Void> callbackContext, int contextId, String moduleName, String method, params,
+dynamic invokeModule(Pointer<Void> callbackContext, WebFController controller, String moduleName, String method, params,
     DartAsyncModuleCallback callback) {
-  WebFController controller = WebFController.getControllerOfJSContextId(contextId)!;
   WebFViewController currentView = controller.view;
   dynamic result;
 
@@ -101,16 +108,16 @@ dynamic invokeModule(Pointer<Void> callbackContext, int contextId, String module
         Pointer<NativeValue> callbackResult = nullptr;
         if (error != null) {
           Pointer<Utf8> errmsgPtr = error.toNativeUtf8();
-          callbackResult = callback(callbackContext, contextId, errmsgPtr, nullptr);
+          callbackResult = callback(callbackContext, currentView.contextId, errmsgPtr, nullptr);
           malloc.free(errmsgPtr);
         } else {
           Pointer<NativeValue> dataPtr = malloc.allocate(sizeOf<NativeValue>());
           toNativeValue(dataPtr, data);
-          callbackResult = callback(callbackContext, contextId, nullptr, dataPtr);
+          callbackResult = callback(callbackContext, currentView.contextId, nullptr, dataPtr);
           malloc.free(dataPtr);
         }
 
-        var returnValue = fromNativeValue(callbackResult);
+        var returnValue = fromNativeValue(currentView, callbackResult);
         if (isEnabledLog) {
           print('Invoke module callback from(name: $moduleName method: $method, params: $params) return: $returnValue time: ${stopwatch!.elapsedMicroseconds}us');
         }
@@ -128,7 +135,7 @@ dynamic invokeModule(Pointer<Void> callbackContext, int contextId, String module
       print('Invoke module failed: $e\n$stack');
     }
     String error = '$e\n$stack';
-    callback(callbackContext, contextId, error.toNativeUtf8(), nullptr);
+    callback(callbackContext, currentView.contextId, error.toNativeUtf8(), nullptr);
   }
 
   if (isEnabledLog) {
@@ -145,8 +152,9 @@ Pointer<NativeValue> _invokeModule(
     Pointer<NativeString> method,
     Pointer<NativeValue> params,
     Pointer<NativeFunction<NativeAsyncModuleCallback>> callback) {
-  dynamic result = invokeModule(callbackContext, contextId, nativeStringToString(module), nativeStringToString(method),
-      fromNativeValue(params), callback.asFunction());
+  WebFController controller = WebFController.getControllerOfJSContextId(contextId)!;
+  dynamic result = invokeModule(callbackContext, controller, nativeStringToString(module), nativeStringToString(method),
+      fromNativeValue(controller.view, params), callback.asFunction());
   Pointer<NativeValue> returnValue = malloc.allocate(sizeOf<NativeValue>());
   toNativeValue(returnValue, result);
   freeNativeString(module);
